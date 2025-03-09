@@ -8,6 +8,8 @@
 
 #include "wsi/OsWindowingManager.hpp"
 
+#include "shaders/ToyParams.hpp"
+
 class App
 {
 public:
@@ -37,4 +39,6 @@ private:
   etna::Image skytxt;
   etna::Image gentxt;
   etna::Sampler sampler;
+
+  etna::Buffer params_buffer;
 };

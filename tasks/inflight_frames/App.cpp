@@ -5,6 +5,7 @@
 #include <etna/PipelineManager.hpp>
 #include <etna/BlockingTransferHelper.hpp>
 #include <etna/RenderTargetStates.hpp>
+#include <etna/Profiling.hpp>
 
 #include <stb_image.h>
 
@@ -77,7 +78,16 @@ App::App()
 
   // Next, we need a magical Etna helper to send commands to the GPU.
   // How it is actually performed is not trivial, but we can skip this for now.
-  commandManager = etna::get_context().createPerFrameCmdMgr();
+  auto &ctx = etna::get_context();
+  params_buffer = ctx.createBuffer(etna::Buffer::CreateInfo {
+		  .size = sizeof(ToyParams),
+		  .bufferUsage = vk::BufferUsageFlagBits::eUniformBuffer,
+		  .memoryUsage = VMA_MEMORY_USAGE_CPU_ONLY,
+		  .name = "params"
+  });
+  params_buffer.map();
+  
+  commandManager = ctx.createPerFrameCmdMgr();
 
   sampler = etna::Sampler(etna::Sampler::CreateInfo{
 		  .name = "sampler"
@@ -86,14 +96,13 @@ App::App()
   gtxt = loadTexture(GRAPHICS_COURSE_RESOURCES_ROOT "/scenes/lovely_town/textures/material_8_metallicRoughness.png", "gTexture");
   skytxt = loadTexture(GRAPHICS_COURSE_RESOURCES_ROOT "/textures/test_tex_1.png", "skyTexture");
 
-  auto& ctx = etna::get_context();
   auto& manager = ctx.getPipelineManager();
 
   etna::create_program(
     "toy",
     {
-      LOCAL_SHADERTOY2_SHADERS_ROOT "rect.vert.spv",
-      LOCAL_SHADERTOY2_SHADERS_ROOT "toy.frag.spv"
+      INFLIGHT_FRAMES_SHADERS_ROOT "rect.vert.spv",
+      INFLIGHT_FRAMES_SHADERS_ROOT "toy.frag.spv"
     });
 
   toyPipeline = { };
@@ -113,8 +122,8 @@ App::App()
   etna::create_program(
     "gen",
     {
-      LOCAL_SHADERTOY2_SHADERS_ROOT "rect.vert.spv",
-      LOCAL_SHADERTOY2_SHADERS_ROOT "gen.frag.spv",
+      INFLIGHT_FRAMES_SHADERS_ROOT "rect.vert.spv",
+      INFLIGHT_FRAMES_SHADERS_ROOT "gen.frag.spv",
     });
 
   genPipeline = manager.createGraphicsPipeline(
@@ -141,7 +150,7 @@ App::App()
     .imageUsage = vk::ImageUsageFlagBits::eSampled |
 	    	  vk::ImageUsageFlagBits::eColorAttachment
   };
-  gentxt = etna::get_context().createImage(info);
+  gentxt = ctx.createImage(info);
 }
 
 etna::Image App::loadTexture(const std::string &path, const std::string &texture_name)
@@ -223,12 +232,8 @@ auto App::getParams()
   auto end = std::chrono::steady_clock::now();
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.f;
  
-  struct { struct {
-	  uint32_t x;
-	  uint32_t y;
-  	} resolution;
-        float time;
-  } params = {{resolution.x, resolution.y}, elapsed};
+  // XXX: add actual mouse
+  ToyParams params = {resolution.x, resolution.y, elapsed, 0, 0};
 
   return params;
 }
@@ -252,6 +257,11 @@ void App::drawFrame()
 
     ETNA_CHECK_VK_RESULT(currentCmdBuf.begin(vk::CommandBufferBeginInfo{}));
     {
+      ETNA_PROFILE_GPU(currentCmdBuf, renderFrame);
+
+      ToyParams params = getParams();
+      std::memcpy(params_buffer.data(), &params, sizeof(params));
+      etna::flush_barriers(currentCmdBuf);
 
       auto genImg = gentxt.get();
       auto genView = gentxt.getView({});
@@ -275,6 +285,10 @@ void App::drawFrame()
       	    0,
 	    gtxt.genBinding(sampler.get(), vk::ImageLayout::eShaderReadOnlyOptimal)
 	  },
+	  etna::Binding {
+      	    1,
+	    params_buffer.genBinding()
+	  },
 	}
       );
 
@@ -290,10 +304,6 @@ void App::drawFrame()
 	NULL
       );
  
-      auto params = getParams();
-      currentCmdBuf.pushConstants(genPipeline.getVkPipelineLayout(), 
-		      		  vk::ShaderStageFlagBits::eFragment,
-		     		  0, sizeof(params), &params);
       currentCmdBuf.draw(3, 1, 0, 0);
 
       etna::set_state(
@@ -333,6 +343,10 @@ void App::drawFrame()
 	    2,
 	    skytxt.genBinding(sampler.get(), vk::ImageLayout::eShaderReadOnlyOptimal)
 	  },
+	  etna::Binding {
+	    3,
+	    params_buffer.genBinding()
+	  },
 	}
       );
 
@@ -348,10 +362,6 @@ void App::drawFrame()
 	NULL
       );
       
-      auto params = getParams();
-      currentCmdBuf.pushConstants(toyPipeline.getVkPipelineLayout(), 
-		      		  vk::ShaderStageFlagBits::eFragment,
-		     		  0, sizeof(params), &params);
       currentCmdBuf.draw(3, 1, 0, 0);
       }
 
@@ -367,6 +377,8 @@ void App::drawFrame()
         vk::ImageAspectFlagBits::eColor);
       // And of course flush the layout transition.
       etna::flush_barriers(currentCmdBuf);
+
+      ETNA_READ_BACK_GPU_PROFILING(currentCmdBuf);
     }
     ETNA_CHECK_VK_RESULT(currentCmdBuf.end());
 

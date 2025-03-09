@@ -1,16 +1,18 @@
 #version 430
 
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : require
+
+#include "ToyParams.hpp"
+
 layout (location = 0) out vec4 fragColor;
 
 layout (binding = 0) uniform sampler2D genTexture;
 layout (binding = 1) uniform sampler2D gTexture;
 layout (binding = 2) uniform sampler2D skyTexture;
-
-layout(push_constant)       uniform Parameters {
-  uint iResolution_x;
-  uint iResolution_y;
-  float time;
-} params;
+layout(binding = 3, set = 0) uniform Params {
+  ToyParams params;
+};
 
 vec2 iResolution;
 float iTime;
@@ -180,7 +182,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
 
 void main()
 {
-  iResolution = vec2(params.iResolution_x, params.iResolution_y);
+  iResolution = vec2(params.resolution_x, params.resolution_y);
   iTime = params.time;
 
   ivec2 iFragCoord = ivec2(gl_FragCoord.xy);
