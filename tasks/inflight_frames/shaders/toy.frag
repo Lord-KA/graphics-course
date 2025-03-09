@@ -16,6 +16,7 @@ layout(binding = 3, set = 0) uniform Params {
 
 vec2 iResolution;
 float iTime;
+vec2 iMouse;
 
 // SDF for a sphere
 float sdSphere(vec3 p, float r) {
@@ -153,7 +154,8 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
     p.x *= iResolution.x / iResolution.y;
     
     // Camera
-    vec3 ro = vec3(0.0, 0.0, 3.0);
+    vec3 ro = vec3(0, 0, 3.0);
+    ro.xy += (iMouse - iResolution.xy / 2) / iResolution.x;
     vec3 rd = normalize(vec3(p, -1.5));
     
     // Rotate
@@ -184,6 +186,7 @@ void main()
 {
   iResolution = vec2(params.resolution_x, params.resolution_y);
   iTime = params.time;
+  iMouse = vec2(params.mouse_x, params.mouse_y);
 
   ivec2 iFragCoord = ivec2(gl_FragCoord.xy);
   mainImage(fragColor, iFragCoord);

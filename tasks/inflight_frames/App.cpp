@@ -7,6 +7,8 @@
 #include <etna/RenderTargetStates.hpp>
 #include <etna/Profiling.hpp>
 
+#include <wsi/OsWindow.hpp>
+
 #include <stb_image.h>
 
 #include <chrono>
@@ -211,7 +213,6 @@ App::~App()
 {
   ETNA_CHECK_VK_RESULT(etna::get_context().getDevice().waitIdle());
 }
-
 void App::run()
 {
   while (!osWindow->isBeingClosed())
@@ -232,8 +233,8 @@ auto App::getParams()
   auto end = std::chrono::steady_clock::now();
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.f;
  
-  // XXX: add actual mouse
-  ToyParams params = {resolution.x, resolution.y, elapsed, 0, 0};
+  auto mouse = osWindow->mouse.freePos;
+  ToyParams params = {resolution.x, resolution.y, elapsed, (shader_uint)mouse.x, (shader_uint)mouse.y};
 
   return params;
 }
