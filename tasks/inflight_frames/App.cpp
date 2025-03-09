@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <unistd.h>
 
 App::App()
   : resolution{1280, 720}
@@ -44,7 +45,7 @@ App::App()
       .deviceExtensions = deviceExtensions,
       // Replace with an index if etna detects your preferred GPU incorrectly
       .physicalDeviceIndexOverride = {},
-      .numFramesInFlight = 1,
+      .numFramesInFlight = 2,
     });
   }
 
@@ -81,14 +82,22 @@ App::App()
   // Next, we need a magical Etna helper to send commands to the GPU.
   // How it is actually performed is not trivial, but we can skip this for now.
   auto &ctx = etna::get_context();
-  params_buffer = ctx.createBuffer(etna::Buffer::CreateInfo {
+  params_buffers[0] = ctx.createBuffer(etna::Buffer::CreateInfo {
 		  .size = sizeof(ToyParams),
 		  .bufferUsage = vk::BufferUsageFlagBits::eUniformBuffer,
 		  .memoryUsage = VMA_MEMORY_USAGE_CPU_ONLY,
-		  .name = "params"
+		  .name = "params-0"
   });
-  params_buffer.map();
-  
+  params_buffers[1] = ctx.createBuffer(etna::Buffer::CreateInfo {
+		  .size = sizeof(ToyParams),
+		  .bufferUsage = vk::BufferUsageFlagBits::eUniformBuffer,
+		  .memoryUsage = VMA_MEMORY_USAGE_CPU_ONLY,
+		  .name = "params-1"
+  });
+  params_buffer_it = 0;
+  params_buffers[0].map();
+  params_buffers[1].map();
+ 
   commandManager = ctx.createPerFrameCmdMgr();
 
   sampler = etna::Sampler(etna::Sampler::CreateInfo{
@@ -234,7 +243,9 @@ auto App::getParams()
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.f;
  
   auto mouse = osWindow->mouse.freePos;
-  ToyParams params = {resolution.x, resolution.y, elapsed, (shader_uint)mouse.x, (shader_uint)mouse.y};
+  shader_uint mouse_x = std::max(mouse.x, 0.f);
+  shader_uint mouse_y = std::max(mouse.y, 0.f);
+  ToyParams params = {resolution.x, resolution.y, elapsed, mouse_x, mouse_y};
 
   return params;
 }
@@ -261,8 +272,15 @@ void App::drawFrame()
       ETNA_PROFILE_GPU(currentCmdBuf, renderFrame);
 
       ToyParams params = getParams();
-      std::memcpy(params_buffer.data(), &params, sizeof(params));
+      {
+	ZoneScoped;
+      	std::memcpy(params_buffers[params_buffer_it].data(), &params, sizeof(params));
+	params_buffer_it = (params_buffer_it + 1) % 2;
+      }
       etna::flush_barriers(currentCmdBuf);
+
+      // Sleep for 20ms
+      usleep(20000);
 
       auto genImg = gentxt.get();
       auto genView = gentxt.getView({});
@@ -288,7 +306,7 @@ void App::drawFrame()
 	  },
 	  etna::Binding {
       	    1,
-	    params_buffer.genBinding()
+	    params_buffers[params_buffer_it].genBinding()
 	  },
 	}
       );
@@ -346,7 +364,7 @@ void App::drawFrame()
 	  },
 	  etna::Binding {
 	    3,
-	    params_buffer.genBinding()
+	    params_buffers[params_buffer_it].genBinding()
 	  },
 	}
       );

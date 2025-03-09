@@ -40,5 +40,6 @@ private:
   etna::Image gentxt;
   etna::Sampler sampler;
 
-  etna::Buffer params_buffer;
+  etna::Buffer params_buffers[2];
+  size_t params_buffer_it;
 };
